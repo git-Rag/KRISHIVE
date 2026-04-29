@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-primary: #0b3d91;
+  --color-brand-secondary: #1d4fa3;
+  --color-brand-accent: #c67d32;
+  --color-brand-surface: #f3f4f6;
+  --font-sans: 'Inter', sans-serif;
+}
+
+@layer base {
+  :root {
+    --background: #ffffff;
+    --foreground: #020617;
+  }
+  .dark {
+    --background: #020617;
+    --foreground: #f8fafc;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+/* Pulsing mic animation */
+@keyframes mic-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(11, 61, 145, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 16px rgba(11, 61, 145, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(11, 61, 145, 0);
+  }
+}
+
+.mic-pulsing {
+  animation: mic-pulse 2s infinite;
+}
