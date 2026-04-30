@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" role="img" aria-labelledby="title desc">
+  <title id="title">Farmland sunrise scene</title>
+  <desc id="desc">Stylized Indian farm with crops and irrigation channels.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#88b7de"/>
+      <stop offset="100%" stop-color="#d9e8c6"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="600" fill="url(#sky)"/>
+  <circle cx="980" cy="120" r="58" fill="#ffd27a"/>
+  <path d="M0 360 C180 330 340 385 530 360 C760 330 970 410 1200 360 L1200 600 L0 600 Z" fill="#6d9c4b"/>
+  <path d="M0 430 C220 400 420 470 620 435 C820 400 1020 470 1200 430 L1200 600 L0 600 Z" fill="#4f7f36"/>
+  <path d="M80 600 L280 360 L420 600 Z" fill="#8f5a2a"/>
+  <path d="M820 600 L980 390 L1110 600 Z" fill="#7a4f22"/>
+  <rect x="520" y="380" width="130" height="80" fill="#d8a15f"/>
+  <polygon points="500,380 585,330 670,380" fill="#8a4f27"/>
+  <rect x="110" y="470" width="980" height="16" fill="#6ca8bf" opacity="0.65"/>
+</svg>

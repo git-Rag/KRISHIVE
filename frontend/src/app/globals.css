@@ -1,10 +1,10 @@
 @import "tailwindcss";
 
 @theme {
-  --color-brand-primary: #0b3d91;
-  --color-brand-secondary: #1d4fa3;
+  --color-brand-primary: #1b5e20;
+  --color-brand-secondary: #2e7d32;
   --color-brand-accent: #c67d32;
-  --color-brand-surface: #f3f4f6;
+  --color-brand-surface: #f7f3e8;
   --font-sans: 'Inter', sans-serif;
 }
 
@@ -26,6 +26,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 button,
 input,
 textarea,
@@ -36,13 +40,13 @@ select {
 /* Pulsing mic animation */
 @keyframes mic-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(11, 61, 145, 0.5);
+    box-shadow: 0 0 0 0 rgba(178, 60, 23, 0.5);
   }
   70% {
-    box-shadow: 0 0 0 16px rgba(11, 61, 145, 0);
+    box-shadow: 0 0 0 14px rgba(178, 60, 23, 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(11, 61, 145, 0);
+    box-shadow: 0 0 0 0 rgba(178, 60, 23, 0);
   }
 }
 

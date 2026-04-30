@@ -1,491 +1,503 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import {
-  AlertTriangle,
-  ArrowRight,
-  ClipboardCheck,
-  Mic,
-  ShieldCheck,
-  Users,
-  Volume2,
-  StopCircle,
-} from "lucide-react";
-import { Sidebar } from "@/components/layout/Sidebar";
-import { TopNavbar } from "@/components/layout/TopNavbar";
-import { Card } from "@/components/ui/Card";
-import { Modal } from "@/components/ui/Modal";
-import { Skeleton } from "@/components/ui/Skeleton";
-import { Table } from "@/components/ui/Table";
-import { ToastItem, ToastStack } from "@/components/ui/ToastStack";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Droplets, Landmark, Leaf, LocateFixed, Sprout, Stethoscope, TrendingUp } from "lucide-react";
+import { ActionCard } from "@/components/home/ActionCard";
+import { HeroAIInput } from "@/components/home/HeroAIInput";
+import { HeroShowcase } from "@/components/home/HeroShowcase";
+import { LanguageToggle } from "@/components/home/LanguageToggle";
+import { NewsCard } from "@/components/home/NewsCard";
+import { SchemeCard } from "@/components/home/SchemeCard";
+import { SectionWrapper } from "@/components/home/SectionWrapper";
+import { AppLanguage, LanguageProvider, useLanguage } from "@/context/LanguageContext";
 import { postVoiceQuery } from "@/lib/api";
-import { SUPPORTED_LANGUAGES, ttsLanguageMap } from "@/lib/languages";
+import { detectFarmerLocation, FarmerLocation, getCachedLocation, saveManualLocation } from "@/lib/location";
 import { BrowserSpeechRecognitionEvent, getSpeechRecognitionCtor, SpeechRecognitionCtor } from "@/lib/speech";
 
-type AssistantResponse = { text: string; lang: string; ok: boolean };
+type TranslationDictionary = {
+  brandSubtitle: string;
+  title: string;
+  heroDescription: string;
+  placeholder: string;
+  send: string;
+  listening: string;
+  loading: string;
+  micLabel: string;
+  languageLabels: Record<AppLanguage, string>;
+  quickActionsTitle: string;
+  quickActionsSubtitle: string;
+  schemesTitle: string;
+  schemesSubtitle: string;
+  schemesCta: string;
+  newsTitle: string;
+  newsSubtitle: string;
+  voiceTitle: string;
+  voiceDescription: string;
+  voiceHighlights: string[];
+  footerAbout: string;
+  footerHelp: string;
+  footerPrivacy: string;
+  helpline: string;
+  assistantResponse: string;
+  assistantFallback: string;
+  sections: { actions: string; schemes: string; news: string; voice: string };
+  suggestions: string[];
+};
 
-export default function Home() {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [activeNav, setActiveNav] = useState("dashboard");
-  const [darkMode, setDarkMode] = useState(false);
-  const [role] = useState<"Admin" | "User">("Admin");
-  const [language, setLanguage] = useState("en");
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const [openRequestModal, setOpenRequestModal] = useState(false);
+const contentByLanguage: Record<AppLanguage, TranslationDictionary> = {
+  en: {
+    brandSubtitle: "Your AI Farming Assistant - works even offline",
+    title: "National Digital Farming Support Platform",
+    heroDescription: "Voice-first advisory for crop planning, disease support, fertilizers, schemes, and market updates.",
+    placeholder: "Ask about crops, disease, fertilizers...",
+    send: "Send",
+    listening: "Listening... speak in Hindi or English.",
+    loading: "Sending",
+    micLabel: "Start voice input",
+    languageLabels: { en: "English", hi: "Hindi" },
+    quickActionsTitle: "Quick Farm Services",
+    quickActionsSubtitle: "Tap once to open major services.",
+    schemesTitle: "Government Schemes",
+    schemesSubtitle: "Simple bilingual information with direct eligibility checks.",
+    schemesCta: "Check Eligibility",
+    newsTitle: "Latest Krishi News",
+    newsSubtitle: "Updates curated for weather, policy, and mandi markets.",
+    voiceTitle: "Voice-First and Offline Ready",
+    voiceDescription: "KRISHIVE keeps key guidance available in low-connectivity regions for small and medium farmers.",
+    voiceHighlights: [
+      "Works in rural low-network conditions with cached key sections.",
+      "Supports English and Hindi voice interaction.",
+      "Designed for low literacy with larger touch targets and plain language.",
+    ],
+    footerAbout: "About",
+    footerHelp: "Help",
+    footerPrivacy: "Privacy Policy",
+    helpline: "Farmer Helpline: 1800-180-1551",
+    assistantResponse: "Assistant response",
+    assistantFallback: "Unable to fetch live answer. Please check backend connectivity.",
+    sections: { actions: "Services", schemes: "Schemes", news: "News", voice: "Voice AI" },
+    suggestions: ["Best crop for my soil?", "Plant disease detection", "Fertilizer advice"],
+  },
+  hi: {
+    brandSubtitle: "आपका AI कृषि सहायक - इंटरनेट के बिना भी काम करता है",
+    title: "राष्ट्रीय डिजिटल कृषि सहायता मंच",
+    heroDescription: "फसल योजना, रोग सलाह, उर्वरक, योजनाएं और मंडी भाव के लिए वॉइस-फर्स्ट सहायता।",
+    placeholder: "फसल, रोग, उर्वरक के बारे में पूछें...",
+    send: "भेजें",
+    listening: "सुन रहा है... हिंदी या अंग्रेजी में बोलें।",
+    loading: "भेजा जा रहा है",
+    micLabel: "वॉइस इनपुट शुरू करें",
+    languageLabels: { en: "English", hi: "हिंदी" },
+    quickActionsTitle: "त्वरित कृषि सेवाएं",
+    quickActionsSubtitle: "मुख्य सेवाएं एक टैप में खोलें।",
+    schemesTitle: "सरकारी योजनाएं",
+    schemesSubtitle: "सरल द्विभाषी जानकारी और सीधा पात्रता जांच विकल्प।",
+    schemesCta: "पात्रता जांचें",
+    newsTitle: "ताजा कृषि समाचार",
+    newsSubtitle: "मौसम, नीति और मंडी बाजार से जुड़ी महत्वपूर्ण अपडेट।",
+    voiceTitle: "वॉइस-फर्स्ट और ऑफलाइन सक्षम",
+    voiceDescription: "KRISHIVE कम नेटवर्क वाले क्षेत्रों में भी किसानों को मुख्य सलाह उपलब्ध कराता है।",
+    voiceHighlights: [
+      "कम नेटवर्क वाले ग्रामीण क्षेत्रों में भी जरूरी सेक्शन कैश से उपलब्ध।",
+      "हिंदी और अंग्रेजी वॉइस इंटरैक्शन का समर्थन।",
+      "कम साक्षरता को ध्यान में रखकर सरल भाषा और बड़े बटन।",
+    ],
+    footerAbout: "परिचय",
+    footerHelp: "सहायता",
+    footerPrivacy: "गोपनीयता नीति",
+    helpline: "किसान हेल्पलाइन: 1800-180-1551",
+    assistantResponse: "सहायक उत्तर",
+    assistantFallback: "लाइव उत्तर प्राप्त नहीं हुआ। कृपया बैकएंड कनेक्शन जांचें।",
+    sections: { actions: "सेवाएं", schemes: "योजनाएं", news: "समाचार", voice: "वॉइस AI" },
+    suggestions: ["मेरी मिट्टी के लिए सबसे अच्छी फसल?", "पौधों के रोग की पहचान", "उर्वरक सलाह"],
+  },
+};
 
-  const [isRecording, setIsRecording] = useState(false);
-  const [transcript, setTranscript] = useState("");
-  const [aiResponse, setAiResponse] = useState<AssistantResponse | null>(null);
+function HomeContent() {
+  const { language, setLanguage } = useLanguage();
+  const t = contentByLanguage[language];
+
+  const [query, setQuery] = useState("");
+  const [answer, setAnswer] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [micError, setMicError] = useState("");
-  const [selectedLanguage, setSelectedLanguage] = useState("auto");
-  const [groqApiKey, setGroqApiKey] = useState(() => {
-    if (typeof window === "undefined") return "";
-    return window.localStorage.getItem("krishive_groq_key") || "";
-  });
-  const [applicationId, setApplicationId] = useState("");
-  const [applicationIdError, setApplicationIdError] = useState("");
-
+  const [isRecording, setIsRecording] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => (typeof window === "undefined" ? true : navigator.onLine));
+  const [location, setLocation] = useState<FarmerLocation | null>(() => (typeof window === "undefined" ? null : getCachedLocation()));
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState("");
+  const [manualDistrict, setManualDistrict] = useState("");
   const recognitionRef = useRef<InstanceType<SpeechRecognitionCtor> | null>(null);
-  const isSendingRef = useRef(false);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", darkMode);
-    window.localStorage.setItem("krishive_dark_mode", String(darkMode));
-  }, [darkMode]);
+    const markOnline = () => setIsOnline(true);
+    const markOffline = () => setIsOnline(false);
+    window.addEventListener("online", markOnline);
+    window.addEventListener("offline", markOffline);
+    return () => {
+      window.removeEventListener("online", markOnline);
+      window.removeEventListener("offline", markOffline);
+    };
+  }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
     const SpeechRecognition = getSpeechRecognitionCtor();
     if (!SpeechRecognition) return;
 
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = true;
-    recognition.lang = "hi-IN";
+    recognition.lang = language === "hi" ? "hi-IN" : "en-IN";
 
-    recognition.onstart = () => {
-      setIsRecording(true);
-        pushToast("Listening started.", "info");
-    };
-
+    recognition.onstart = () => setIsRecording(true);
     recognition.onresult = (event: BrowserSpeechRecognitionEvent) => {
       let currentTranscript = "";
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
         currentTranscript += event.results[i][0].transcript;
       }
-      setTranscript(currentTranscript);
+      setQuery(currentTranscript);
     };
-
-    recognition.onend = () => {
-      setIsRecording(false);
-    };
-
+    recognition.onend = () => setIsRecording(false);
     recognition.onerror = (event: { error: string }) => {
-      if (event.error === "network") {
-        setMicError("Speech recognition network error. Check internet and try again.");
-      } else if (event.error === "not-allowed") {
-        setMicError("Microphone permission denied. Please allow microphone access in browser settings.");
-      } else if (event.error !== "aborted") {
-        setMicError(`Speech recognition error: ${event.error}`);
-      }
       setIsRecording(false);
+      setMicError(event.error === "not-allowed" ? "Microphone permission denied." : `Voice error: ${event.error}`);
     };
-
     recognitionRef.current = recognition;
 
     return () => {
-      recognition.onstart = null;
-      recognition.onresult = null;
-      recognition.onend = null;
-      recognition.onerror = null;
       recognitionRef.current = null;
     };
-  }, []);
+  }, [language]);
 
-  useEffect(() => {
-    const selected = SUPPORTED_LANGUAGES.find((lang) => lang.value === selectedLanguage);
-    if (recognitionRef.current && selected) {
-      recognitionRef.current.lang = selected.speechLang;
-    }
-  }, [selectedLanguage]);
+  const actions = useMemo(
+    () => [
+      {
+        icon: <Sprout size={18} />,
+        title: language === "en" ? "Crop Recommendation" : "फसल सिफारिश",
+        description:
+          language === "en" ? "Find crops suitable to your soil and season." : "आपकी मिट्टी और मौसम के अनुसार फसल सुझाव।",
+        cta: language === "en" ? "Open Service" : "सेवा खोलें",
+        href: "#hero",
+      },
+      {
+        icon: <Leaf size={18} />,
+        title: language === "en" ? "Soil & Fertilizer Advice" : "मिट्टी और उर्वरक सलाह",
+        description: language === "en" ? "Balanced nutrient plans for better yield." : "बेहतर उत्पादन के लिए संतुलित पोषण योजना।",
+        cta: language === "en" ? "Get Advice" : "सलाह लें",
+        href: "#hero",
+      },
+      {
+        icon: <Stethoscope size={18} />,
+        title: language === "en" ? "Disease Detection" : "रोग पहचान",
+        description: language === "en" ? "Identify symptoms and get treatment tips." : "लक्षण पहचानें और उपचार सुझाव पाएं।",
+        cta: language === "en" ? "Detect Now" : "अभी पहचानें",
+        href: "#hero",
+      },
+      {
+        icon: <TrendingUp size={18} />,
+        title: language === "en" ? "Market Prices" : "मंडी भाव",
+        description: language === "en" ? "Track mandi trends and price signals." : "मंडी रुझान और भाव संकेत देखें।",
+        cta: language === "en" ? "View Prices" : "भाव देखें",
+        href: "#news",
+      },
+      {
+        icon: <Landmark size={18} />,
+        title: language === "en" ? "Government Schemes" : "सरकारी योजनाएं",
+        description: language === "en" ? "Discover subsidy and insurance opportunities." : "सब्सिडी और बीमा लाभ खोजें।",
+        cta: language === "en" ? "Explore Schemes" : "योजनाएं देखें",
+        href: "#schemes",
+      },
+      {
+        icon: <Droplets size={18} />,
+        title: language === "en" ? "Water Advice" : "जल सलाह",
+        description:
+          language === "en"
+            ? "Get irrigation and water guidance for your crops."
+            : "अपनी फसल के लिए सिंचाई और पानी की सलाह पाएं।",
+        cta: language === "en" ? "Open Water Advice" : "जल सलाह खोलें",
+        href: "/water-advice",
+      },
+    ],
+    [language],
+  );
 
-  const toggleRecording = () => {
-    const recognitionSupported = Boolean(recognitionRef.current);
-    if (!recognitionSupported) {
-      setMicError("Voice input is not supported in this browser. Use latest Chrome on Android or desktop.");
-      pushToast("Voice input unsupported in this browser.", "error");
+  const schemes = [
+    {
+      title: "PM-KISAN",
+      summaryEnglish: "Income support for eligible farmer families through direct benefit transfer.",
+      summaryHindi: "योग्य किसान परिवारों के लिए प्रत्यक्ष लाभ हस्तांतरण के माध्यम से आय सहायता।",
+    },
+    {
+      title: "Soil Health Card",
+      summaryEnglish: "Periodic soil testing and nutrient recommendations for scientific farming.",
+      summaryHindi: "वैज्ञानिक खेती हेतु मृदा परीक्षण और पोषक तत्वों की सिफारिश।",
+    },
+    {
+      title: language === "en" ? "Crop Insurance" : "फसल बीमा",
+      summaryEnglish: "Protection against crop loss due to weather risks and natural events.",
+      summaryHindi: "मौसम जोखिम और प्राकृतिक घटनाओं से फसल नुकसान पर सुरक्षा।",
+    },
+  ];
+
+  const newsByLanguage = {
+    en: [
+      { headline: "Monsoon expected to arrive early in central India", summary: "Advisory encourages early seed preparation for rain-fed regions.", tag: "weather" },
+      { headline: "New MSP revision announced for kharif crops", summary: "Updated support prices released for paddy, pulses, and oilseeds.", tag: "policy" },
+      { headline: "Tomato prices rise in key mandis this week", summary: "Farmers advised to monitor local demand before dispatch.", tag: "market" },
+    ],
+    hi: [
+      { headline: "मध्य भारत में मानसून जल्दी आने की संभावना", summary: "वर्षा आधारित क्षेत्रों में बीज तैयारी जल्दी शुरू करने की सलाह।", tag: "मौसम" },
+      { headline: "खरीफ फसलों के लिए नया MSP संशोधन जारी", summary: "धान, दाल और तिलहन के लिए अद्यतन समर्थन मूल्य घोषित।", tag: "नीति" },
+      { headline: "इस सप्ताह प्रमुख मंडियों में टमाटर के भाव बढ़े", summary: "किसानों को स्थानीय मांग देखकर आपूर्ति करने की सलाह।", tag: "बाजार" },
+    ],
+  };
+
+  const toggleMic = async () => {
+    if (!recognitionRef.current) {
+      setMicError("Speech recognition not supported in this browser.");
       return;
     }
-
+    setMicError("");
     if (isRecording) {
-      recognitionRef.current?.stop();
-    } else {
-      setMicError("");
-      setTranscript("");
-      setAiResponse(null);
-      void startRecording();
+      recognitionRef.current.stop();
+      return;
     }
-  };
-
-  const startRecording = async () => {
     try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        recognitionRef.current?.start();
-        return;
+      if (navigator.mediaDevices?.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
       }
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((track) => track.stop());
-      recognitionRef.current?.start();
+      recognitionRef.current.start();
     } catch {
-      setMicError("Microphone permission was denied or unavailable. Allow microphone access and try again.");
-      pushToast("Microphone permission denied.", "error");
+      setMicError("Unable to access microphone.");
     }
   };
 
-  const saveApiKey = () => {
-    const trimmed = groqApiKey.trim();
-    window.localStorage.setItem("krishive_groq_key", trimmed);
-    pushToast("API key stored in local browser storage.", "success");
-  };
-
-  const sendToBackend = async (text: string) => {
-    if (isSendingRef.current) return;
-    isSendingRef.current = true;
+  const submitQuery = async () => {
+    if (!query.trim()) return;
     setIsLoading(true);
     try {
-      const data = await postVoiceQuery({
-        text,
-        language: selectedLanguage === "auto" ? language : selectedLanguage,
-        groq_api_key: groqApiKey.trim() || undefined,
-      });
-      setAiResponse({ text: data.answer, lang: data.language, ok: data.ok });
-      playAudio(data.answer, data.language);
-      pushToast("Response received successfully.", "success");
-    } catch (error) {
-      console.error(error);
-      setAiResponse({
-        text: "We could not complete the request. Please verify your network, backend status, and API key.",
-        lang: "en",
-        ok: false,
-      });
-      pushToast("Request failed. Please verify service configuration.", "error");
+      const result = await postVoiceQuery({ text: query.trim(), language, location: location || undefined });
+      setAnswer(result.answer);
+    } catch {
+      setAnswer(t.assistantFallback);
     } finally {
       setIsLoading(false);
-      isSendingRef.current = false;
     }
   };
 
-  const playAudio = (text: string, lang: string) => {
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = ttsLanguageMap[lang] || "hi-IN";
-      utterance.rate = 0.9;
-
-      utterance.onstart = () => setIsPlaying(true);
-      utterance.onend = () => setIsPlaying(false);
-      utterance.onerror = () => setIsPlaying(false);
-
-      window.speechSynthesis.speak(utterance);
+  const handleUseMyLocation = async () => {
+    setIsLocating(true);
+    setLocationError("");
+    try {
+      const detected = await detectFarmerLocation();
+      setLocation(detected);
+    } catch {
+      setLocationError(language === "en" ? "Location unavailable. Enter district manually." : "लोकेशन उपलब्ध नहीं है। जिला मैनुअली भरें।");
+    } finally {
+      setIsLocating(false);
     }
   };
 
-  const stopAudio = () => {
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-      setIsPlaying(false);
-    }
+  const handleSaveManualDistrict = () => {
+    if (!manualDistrict.trim()) return;
+    const saved = saveManualLocation(manualDistrict.trim(), language === "en" ? "Unknown state" : "अज्ञात राज्य");
+    setLocation(saved);
+    setLocationError("");
   };
-
-  const submitTranscript = () => {
-    if (!transcript.trim() || isLoading) return;
-    sendToBackend(transcript.trim());
-  };
-
-  function pushToast(message: string, type: ToastItem["type"]) {
-    const id = `${Date.now()}-${Math.random()}`;
-    setToasts((prev) => [...prev, { id, message, type }]);
-    window.setTimeout(() => {
-      setToasts((prev) => prev.filter((item) => item.id !== id));
-    }, 3000);
-  }
-
-  const validateTrackingForm = () => {
-    const value = applicationId.trim();
-    if (!/^[A-Z0-9-]{6,20}$/i.test(value)) {
-      setApplicationIdError("Enter a valid application ID (6-20 chars, letters, numbers, hyphen).");
-      return false;
-    }
-    setApplicationIdError("");
-    pushToast(`Tracking details loaded for ${value.toUpperCase()}.`, "info");
-    return true;
-  };
-
-  const kpis = [
-    { label: "Total Service Requests", value: "2,184", icon: ClipboardCheck },
-    { label: "Citizens Served Today", value: "746", icon: Users },
-    { label: "System Uptime", value: "99.98%", icon: ShieldCheck },
-    { label: "Active Incidents", value: "03", icon: AlertTriangle },
-  ];
-
-  const requestRows = [
-    { id: "1", service: "Agricultural Subsidy", applicant: "Rakesh Kumar", status: "Under Review" as const, updatedAt: "Today, 12:40" },
-    { id: "2", service: "Crop Insurance Claim", applicant: "Shanti Devi", status: "Pending" as const, updatedAt: "Today, 11:20" },
-    { id: "3", service: "Soil Health Card", applicant: "Manoj Singh", status: "Approved" as const, updatedAt: "Yesterday, 17:05" },
-  ];
 
   return (
-    <>
-      <ToastStack toasts={toasts} onDismiss={(id) => setToasts((prev) => prev.filter((toast) => toast.id !== id))} />
-      <div className="flex min-h-screen bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-        <Sidebar
-          collapsed={sidebarCollapsed}
-          activeId={activeNav}
-          onSelect={setActiveNav}
-          onToggle={() => setSidebarCollapsed((prev) => !prev)}
+    <div className="min-h-screen bg-[#f7f3e8] text-[#1f2a1f]">
+      <header className="sticky top-0 z-20 border-b border-[#ddd6c4] bg-[#f7f3e8]/95 backdrop-blur-sm">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
+          <a href="#hero" className="text-xl font-bold text-[#1b5e20]">KRISHIVE</a>
+          <div className="hidden items-center gap-5 text-sm text-[#2f3a2f] sm:flex">
+            <a href="#actions">{language === "en" ? "Crop" : "फसल"}</a>
+            <a href="#actions">{language === "en" ? "Disease" : "रोग"}</a>
+            <a href="#news">{language === "en" ? "Weather" : "मौसम"}</a>
+            <a href="/water-advice">{language === "en" ? "Water Advice" : "जल सलाह"}</a>
+            <a href="#actions">{t.sections.actions}</a>
+            <a href="#schemes">{t.sections.schemes}</a>
+            <a href="#news">{t.sections.news}</a>
+            <a href="#voice">{t.sections.voice}</a>
+          </div>
+          <LanguageToggle labels={t.languageLabels} />
+        </div>
+      </header>
+
+      <main>
+        <section id="hero" className="border-b border-[#dfd8c7] bg-[radial-gradient(circle_at_top,#f9f6eb,#f2ecd9)]">
+          <div className="mx-auto flex w-full max-w-6xl flex-col items-center px-4 py-12 text-center sm:px-6 sm:py-16">
+            <p className="text-sm font-medium uppercase tracking-wide text-[#8a6119]">Government-grade digital agriculture</p>
+            <h1 className="mt-3 text-4xl font-semibold text-[#1b5e20] sm:text-6xl">KRISHIVE</h1>
+            <p className="mt-3 text-base text-[#334233] sm:text-lg">{t.brandSubtitle}</p>
+            <p className="mt-2 max-w-2xl text-sm text-[#4f5d4f] sm:text-base">{t.heroDescription}</p>
+            <div className="mt-5 w-full max-w-4xl rounded-xl border border-[#ddd6c4] bg-white p-3 text-left sm:p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  type="button"
+                  onClick={() => void handleUseMyLocation()}
+                  disabled={isLocating}
+                  className="inline-flex min-h-[52px] items-center justify-center gap-2 rounded-lg border border-[#1b5e20] px-4 text-sm font-medium text-[#1b5e20]"
+                >
+                  <LocateFixed size={16} />
+                  {isLocating ? (language === "en" ? "Detecting..." : "ढूंढ रहे हैं...") : language === "en" ? "Use My Location" : "मेरी लोकेशन उपयोग करें"}
+                </button>
+                <p className="text-sm text-[#3f4c3f]">
+                  {location
+                    ? `${language === "en" ? "Location" : "स्थान"}: ${location.district}, ${location.state}`
+                    : language === "en"
+                      ? "Location not set"
+                      : "स्थान सेट नहीं है"}
+                </p>
+              </div>
+              {!isOnline && !location ? (
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    value={manualDistrict}
+                    onChange={(event) => setManualDistrict(event.target.value)}
+                    placeholder={language === "en" ? "Enter district manually" : "जिला नाम दर्ज करें"}
+                    className="min-h-[48px] flex-1 rounded-lg border border-[#d8d2bf] px-3 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveManualDistrict}
+                    className="min-h-[48px] rounded-lg bg-[#1b5e20] px-4 text-sm font-medium text-white"
+                  >
+                    {language === "en" ? "Save District" : "जिला सहेजें"}
+                  </button>
+                </div>
+              ) : null}
+              {locationError ? <p className="mt-2 text-sm text-[#8f2f14]">{locationError}</p> : null}
+            </div>
+            <div className="mt-8 w-full max-w-4xl">
+              <HeroAIInput
+                query={query}
+                placeholder={t.placeholder}
+                micLabel={t.micLabel}
+                sendLabel={t.send}
+                listeningLabel={t.listening}
+                loadingLabel={t.loading}
+                suggestions={t.suggestions}
+                isRecording={isRecording}
+                isLoading={isLoading}
+                onQueryChange={setQuery}
+                onMicClick={() => void toggleMic()}
+                onSend={() => void submitQuery()}
+                onSuggestionClick={setQuery}
+              />
+            </div>
+            {micError ? <p className="mt-4 rounded-lg bg-[#fce9e4] px-4 py-2 text-sm text-[#8f2f14]">{micError}</p> : null}
+            {answer ? (
+              <div className="mt-4 w-full max-w-4xl rounded-2xl border border-[#d9d3c2] bg-white p-4 text-left">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#6e7a6f]">{t.assistantResponse}</p>
+                <p className="mt-2 text-sm leading-6 text-[#2d392d]">{answer}</p>
+              </div>
+            ) : null}
+          </div>
+        </section>
+        <HeroShowcase
+          headline={language === "en" ? "Smart Farming. Simple Decisions." : "स्मार्ट खेती। सरल फैसले।"}
+          subtext={language === "en" ? "Voice-powered AI for every farmer" : "हर किसान के लिए वॉइस-सक्षम AI"}
+          micLabel={t.micLabel}
+          isRecording={isRecording}
+          onMicClick={() => void toggleMic()}
         />
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <TopNavbar
-            title="Dashboard"
-            role={role}
-            darkMode={darkMode}
-            language={language}
-            onDarkModeToggle={() => setDarkMode((prev) => !prev)}
-            onLanguageChange={setLanguage}
-          />
+        <SectionWrapper id="actions" title={t.quickActionsTitle} subtitle={t.quickActionsSubtitle}>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {actions.map((item) => (
+              <ActionCard key={item.title} icon={item.icon} title={item.title} description={item.description} cta={item.cta} href={item.href} />
+            ))}
+          </div>
+        </SectionWrapper>
 
-          <main className="flex-1 p-4 md:p-6">
-            <div className="mb-4 text-sm text-slate-600 dark:text-slate-400">Home / Dashboard / Service Operations</div>
+        <SectionWrapper id="schemes" title={t.schemesTitle} subtitle={t.schemesSubtitle}>
+          <div className="grid gap-4 md:grid-cols-3">
+            {schemes.map((item) => (
+              <SchemeCard
+                key={item.title}
+                title={item.title}
+                summaryEnglish={item.summaryEnglish}
+                summaryHindi={item.summaryHindi}
+                cta={t.schemesCta}
+              />
+            ))}
+          </div>
+        </SectionWrapper>
 
-            <div className="mb-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {kpis.map((kpi) => {
-                const Icon = kpi.icon;
-                return (
-                  <Card key={kpi.label} className="transition hover:shadow-md">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">{kpi.label}</p>
-                        <p className="mt-1 text-2xl font-semibold">{kpi.value}</p>
-                      </div>
-                      <Icon size={18} className="text-[#0b3d91]" />
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
-
-            <div className="grid gap-4 xl:grid-cols-3">
-              <Card
-                title="Core Service Assistant"
-                subtitle="Voice and text-enabled citizen service support"
-                className="xl:col-span-2"
+        <SectionWrapper id="news" title={t.newsTitle} subtitle={t.newsSubtitle}>
+          <div className="mb-5">
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setLanguage("en")}
+                className={`rounded-full px-3 py-1 text-sm ${language === "en" ? "bg-[#1b5e20] text-white" : "bg-white text-[#1b5e20]"}`}
               >
-                <div className="mb-3 flex flex-wrap items-center gap-2">
-                  <select
-                    value={selectedLanguage}
-                    onChange={(e) => setSelectedLanguage(e.target.value)}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900"
-                    aria-label="Language preference"
-                  >
-                    {SUPPORTED_LANGUAGES.map((item) => (
-                      <option key={item.value} value={item.value}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    value={groqApiKey}
-                    onChange={(e) => setGroqApiKey(e.target.value)}
-                    placeholder="Groq API key"
-                    className="min-w-[260px] flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900"
-                    aria-label="Groq API key"
-                  />
-                  <button type="button" onClick={saveApiKey} className="rounded-lg bg-[#0b3d91] px-3 py-2 text-sm text-white">
-                    Save Key
-                  </button>
-                </div>
-
-                <div className="mb-3 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={toggleRecording}
-                    className={`rounded-full p-3 text-white ${isRecording ? "bg-red-600" : "bg-[#0b3d91]"}`}
-                  >
-                    {isRecording ? <StopCircle size={20} /> : <Mic size={20} />}
-                  </button>
-                  <p className="text-sm text-slate-700 dark:text-slate-300">{isRecording ? "Listening..." : "Tap to start voice capture"}</p>
-                </div>
-                {micError && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{micError}</p>}
-
-                <textarea
-                  value={transcript}
-                  onChange={(e) => setTranscript(e.target.value)}
-                  className="min-h-28 w-full rounded-lg border border-slate-300 bg-white p-3 text-sm dark:border-slate-600 dark:bg-slate-900"
-                  placeholder="Enter query or use voice input..."
-                />
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={submitTranscript}
-                    disabled={!transcript.trim() || isLoading}
-                    className="rounded-lg bg-[#0b3d91] px-4 py-2 text-sm text-white disabled:opacity-50"
-                  >
-                    {isLoading ? "Processing..." : "Submit"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTranscript("");
-                      setAiResponse(null);
-                    }}
-                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-600"
-                  >
-                    Reset
-                  </button>
-                </div>
-
-                {isLoading && (
-                  <div className="mt-3 space-y-2">
-                    <Skeleton className="h-4 w-1/2" />
-                    <Skeleton className="h-4 w-full" />
-                    <Skeleton className="h-4 w-4/5" />
-                  </div>
-                )}
-
-                {aiResponse && !isLoading && (
-                  <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
-                    <div className="mb-2 flex items-center justify-between">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Detected language: {aiResponse.lang}</p>
-                      <button
-                        type="button"
-                        onClick={() => (isPlaying ? stopAudio() : playAudio(aiResponse.text, aiResponse.lang))}
-                        className="rounded-md border border-slate-300 p-1 dark:border-slate-600"
-                      >
-                        {isPlaying ? <StopCircle size={16} /> : <Volume2 size={16} />}
-                      </button>
-                    </div>
-                    <p className="text-sm leading-6 text-slate-800 dark:text-slate-200">{aiResponse.text}</p>
-                  </div>
-                )}
-              </Card>
-
-              <Card title="Status Tracker" subtitle="Track citizen application">
-                <label className="mb-1 block text-sm font-medium">Application ID</label>
-                <input
-                  value={applicationId}
-                  onChange={(e) => setApplicationId(e.target.value)}
-                  className={`w-full rounded-lg border px-3 py-2 text-sm dark:bg-slate-900 ${
-                    applicationIdError ? "border-red-500" : "border-slate-300 dark:border-slate-600"
-                  }`}
-                  placeholder="Ex: AGRI-2026-1001"
-                />
-                {applicationIdError && <p className="mt-1 text-xs text-red-600">{applicationIdError}</p>}
-                <button
-                  className="mt-3 w-full rounded-lg bg-[#0b3d91] px-3 py-2 text-sm text-white"
-                  type="button"
-                  onClick={validateTrackingForm}
-                >
-                  Check Status
-                </button>
-                <div className="mt-4 space-y-3">
-                  <div className="flex items-center gap-2 text-sm"><span className="h-2 w-2 rounded-full bg-green-600" /> Submitted</div>
-                  <div className="flex items-center gap-2 text-sm"><span className="h-2 w-2 rounded-full bg-green-600" /> Under Verification</div>
-                  <div className="flex items-center gap-2 text-sm"><span className="h-2 w-2 rounded-full bg-amber-500" /> Approval Pending</div>
-                </div>
-              </Card>
+                English
+              </button>
+              <button
+                type="button"
+                onClick={() => setLanguage("hi")}
+                className={`rounded-full px-3 py-1 text-sm ${language === "hi" ? "bg-[#1b5e20] text-white" : "bg-white text-[#1b5e20]"}`}
+              >
+                हिंदी
+              </button>
             </div>
-
-            <div className="mt-4 grid gap-4 xl:grid-cols-3">
-              <Card title="Analytics" subtitle="Weekly service volume" className="xl:col-span-2">
-                <div className="grid h-40 grid-cols-7 items-end gap-2">
-                  {[46, 58, 35, 66, 72, 61, 80].map((height, idx) => (
-                    <div key={idx} className="rounded-t bg-[#0b3d91]/80 transition-all hover:bg-[#0b3d91]" style={{ height: `${height}%` }} />
-                  ))}
-                </div>
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Service requests processed over the last 7 days</p>
-              </Card>
-
-              <Card title="Quick Actions">
-                <button
-                  type="button"
-                  className="mb-2 flex w-full items-center justify-between rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600"
-                  onClick={() => setOpenRequestModal(true)}
-                >
-                  New Service Request <ArrowRight size={14} />
-                </button>
-                <button className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600" type="button">
-                  Generate Department Report
-                </button>
-                <button className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600" type="button">
-                  View Incident Queue
-                </button>
-              </Card>
-            </div>
-
-            <div className="mt-4 grid gap-4 xl:grid-cols-3">
-              <Card title="Recent Activity" className="xl:col-span-2">
-                <Table rows={requestRows} />
-              </Card>
-              <Card title="Alerts & Announcements">
-                <ul className="space-y-2 text-sm">
-                  <li className="rounded-lg bg-amber-50 p-2 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
-                    Scheduled maintenance window: Saturday 11:00 PM - 01:00 AM.
-                  </li>
-                  <li className="rounded-lg bg-blue-50 p-2 text-blue-900 dark:bg-blue-900/20 dark:text-blue-200">
-                    New farmer assistance policy circular is now available.
-                  </li>
-                  <li className="rounded-lg bg-slate-100 p-2 dark:bg-slate-800">
-                    Helpdesk SLA compliance this week: 97.4%.
-                  </li>
-                </ul>
-              </Card>
-            </div>
-          </main>
-
-          <footer className="border-t border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p>© 2026 KRISHIVE Digital Services</p>
-              <div className="flex gap-4">
-                <a href="#" className="hover:underline">Privacy Policy</a>
-                <a href="#" className="hover:underline">Terms</a>
-                <a href="#" className="hover:underline">Help</a>
-              </div>
-            </div>
-          </footer>
-        </div>
-      </div>
-
-      <Modal open={openRequestModal} title="Create Service Request" onClose={() => setOpenRequestModal(false)}>
-        <div className="space-y-3">
-          <div>
-            <label className="mb-1 block text-sm font-medium">Applicant Name</label>
-            <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900" />
           </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium">Service Type</label>
-            <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900">
-              <option>Subsidy Application</option>
-              <option>Insurance Claim</option>
-              <option>Document Verification</option>
-            </select>
+          <div className="grid gap-4 md:grid-cols-3">
+            {newsByLanguage[language].map((item) => (
+              <NewsCard key={item.headline} headline={item.headline} summary={item.summary} tag={item.tag} />
+            ))}
           </div>
-          <button
-            type="button"
-            className="rounded-lg bg-[#0b3d91] px-4 py-2 text-sm text-white"
-            onClick={() => {
-              setOpenRequestModal(false);
-              pushToast("Service request submitted.", "success");
-            }}
-          >
-            Submit Request
-          </button>
+        </SectionWrapper>
+
+        <SectionWrapper id="voice" title={t.voiceTitle} subtitle={t.voiceDescription}>
+          {!isOnline ? (
+            <div className="mb-4 rounded-xl border border-[#e2ad6a] bg-[#fff4e5] p-3 text-sm text-[#8d4a00]">
+              {language === "en" ? "You are offline. Cached guidance sections are still available." : "आप ऑफलाइन हैं। कैश किए गए सेक्शन अभी भी उपलब्ध हैं।"}
+            </div>
+          ) : null}
+          <div className="rounded-2xl border border-[#d9d3c2] bg-[#fffdf7] p-6">
+            <div className="mb-4 flex items-center gap-4">
+              <div className={`h-3 w-3 rounded-full ${isRecording ? "animate-pulse bg-[#b23c17]" : "bg-[#1b5e20]"}`} />
+              <p className="text-sm text-[#4d594d]">
+                {isRecording
+                  ? language === "en"
+                    ? "Voice capture is active."
+                    : "वॉइस कैप्चर सक्रिय है।"
+                  : language === "en"
+                    ? "Tap microphone in hero to speak."
+                    : "बोलने के लिए हीरो सेक्शन में माइक्रोफोन दबाएं।"}
+              </p>
+            </div>
+            <ul className="space-y-2 text-sm text-[#3d4a3d]">
+              {t.voiceHighlights.map((line) => (
+                <li key={line}>- {line}</li>
+              ))}
+            </ul>
+          </div>
+        </SectionWrapper>
+      </main>
+
+      <footer className="border-t border-[#ddd6c4] bg-[#efe8d3]">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-4 py-6 text-sm text-[#334133] sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <p>{t.helpline}</p>
+          <div className="flex items-center gap-4">
+            <a href="#">{t.footerAbout}</a>
+            <a href="#">{t.footerHelp}</a>
+            <a href="#">{t.footerPrivacy}</a>
+          </div>
         </div>
-      </Modal>
-    </>
+      </footer>
+    </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <LanguageProvider>
+      <HomeContent />
+    </LanguageProvider>
   );
 }

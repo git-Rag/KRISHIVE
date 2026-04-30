@@ -1,5 +1,5 @@
 # =========================
-# 🔐 ENV & SECRETS
+#  ENV & SECRETS
 # =========================
 .env
 .env.*
@@ -11,7 +11,7 @@ frontend/.env
 !*.env.example
 
 # =========================
-# 🐍 PYTHON (Backend)
+#  PYTHON (Backend)
 # =========================
 __pycache__/
 *.py[cod]
@@ -30,7 +30,7 @@ dist/
 *.egg-info/
 
 # =========================
-# 🌐 NODE (Frontend)
+#  NODE (Frontend)
 # =========================
 node_modules/
 npm-debug.log*
@@ -45,7 +45,7 @@ build/
 out/
 
 # =========================
-# 🧠 AI / ML / DATA FILES
+#  AI / ML / DATA FILES
 # =========================
 *.h5
 *.pt
@@ -58,19 +58,19 @@ out/
 *.tsv
 
 # =========================
-# 🗄️ DATABASES
+#  DATABASES
 # =========================
 *.sqlite3
 *.db
 
 # =========================
-# 💻 OS FILES
+#  OS FILES
 # =========================
 .DS_Store
 Thumbs.db
 
 # =========================
-# 🛠️ EDITOR / IDE
+#  EDITOR / IDE
 # =========================
 .vscode/
 .idea/
@@ -78,14 +78,14 @@ Thumbs.db
 *.swo
 
 # =========================
-# 🧪 TEST / CACHE
+#  TEST / CACHE
 # =========================
 .pytest_cache/
 coverage/
 htmlcov/
 
 # =========================
-# 🚀 DEPLOYMENT / TEMP
+#  DEPLOYMENT / TEMP
 # =========================
 *.log
 logs/
@@ -93,11 +93,11 @@ tmp/
 temp/
 
 # =========================
-# 🧱 DOCKER (optional)
+#  DOCKER (optional)
 # =========================
 docker-compose.override.yml
 
 # =========================
-# 🔒 GIT
+#  GIT
 # =========================
 .gitmodules

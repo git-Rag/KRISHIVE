@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" role="img" aria-labelledby="title desc">
+  <title id="title">Irrigated agriculture land</title>
+  <desc id="desc">Irrigation setup and layered crop fields in a rural landscape.</desc>
+  <defs>
+    <linearGradient id="g2" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#7fb0d8"/>
+      <stop offset="100%" stop-color="#e5edd4"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="600" fill="url(#g2)"/>
+  <path d="M0 340 C240 290 450 390 690 340 C890 300 1040 350 1200 320 L1200 600 L0 600 Z" fill="#6a9a49"/>
+  <path d="M0 430 C260 380 460 470 700 420 C900 380 1040 430 1200 410 L1200 600 L0 600 Z" fill="#527f37"/>
+  <rect x="860" y="280" width="20" height="220" fill="#909ea7"/>
+  <circle cx="870" cy="280" r="28" fill="#9ab1be"/>
+  <path d="M870 280 C760 260 710 280 650 320" stroke="#c9dce5" stroke-width="10" fill="none"/>
+  <path d="M660 328 C618 360 615 390 590 420" stroke="#8ec0d6" stroke-width="8" fill="none"/>
+  <rect x="180" y="470" width="660" height="15" fill="#71adc4" opacity="0.6"/>
+  <rect x="80" y="515" width="980" height="12" fill="#71adc4" opacity="0.55"/>
+</svg>

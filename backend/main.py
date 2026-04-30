@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from twilio.twiml.messaging_response import MessagingResponse
 from twilio.twiml.voice_response import VoiceResponse
+from services.jalsetu_engine import get_water_advice
 
 load_dotenv()
 
@@ -37,6 +38,16 @@ class VoiceQueryReq(BaseModel):
     text: str
     language: str = "auto"
     groq_api_key: str | None = None
+    location: dict[str, Any] | None = None
+
+
+class WaterAdviceReq(BaseModel):
+    crop: str
+    soil_condition: str
+    temperature: float
+    humidity: float
+    rain_forecast: bool
+    location: dict[str, Any] | None = None
 
 
 def get_groq_key(override_key: str | None = None):
@@ -112,7 +123,12 @@ def detect_language_groq(text: str, fallback_language: str, override_key: str | 
     return fallback_language if fallback_language != "auto" else "en"
 
 
-def ask_groq(user_text: str, language: str, override_key: str | None = None):
+def ask_groq(
+    user_text: str,
+    language: str,
+    override_key: str | None = None,
+    location: dict[str, Any] | None = None,
+):
     groq_key = get_groq_key(override_key)
     if not groq_key:
         return {
@@ -123,10 +139,29 @@ def ask_groq(user_text: str, language: str, override_key: str | None = None):
             ),
         }
 
+    location_bits = []
+    if location:
+        district = str(location.get("district") or "").strip()
+        state = str(location.get("state") or "").strip()
+        if district:
+            location_bits.append(district)
+        if state:
+            location_bits.append(state)
+
+    location_prompt = ""
+    if location_bits:
+        location_prompt = (
+            "The farmer is located in "
+            + ", ".join(location_bits)
+            + ". Give localized advice based on climate and region. "
+        )
+
     system_prompt = (
         "You are a professional agriculture advisory assistant for India. "
         "Provide practical, safe, concise, and actionable guidance. "
         "Use simple wording and short paragraphs. "
+        + location_prompt
+        + " "
         f"Respond in language code `{language}`."
     )
     payload = {
@@ -156,6 +191,77 @@ def ask_groq(user_text: str, language: str, override_key: str | None = None):
         return {"ok": False, "answer": f"Unable to contact model provider: {str(exc)}"}
 
 
+def is_water_query(text: str):
+    lowered = text.lower()
+    keywords = ["water", "irrigation", "paani", "sinchai", "पानी", "सिंचाई"]
+    return any(word in lowered for word in keywords)
+
+
+def infer_water_inputs(text: str):
+    lowered = text.lower()
+    crop_map = {
+        "wheat": ["wheat", "gehun", "गेहूं"],
+        "rice": ["rice", "paddy", "dhaan", "धान"],
+        "maize": ["maize", "corn", "makka", "मक्का"],
+        "cotton": ["cotton", "kapas", "कपास"],
+        "sugarcane": ["sugarcane", "ganna", "गन्ना"],
+    }
+
+    crop = "wheat"
+    for key, aliases in crop_map.items():
+        if any(alias in lowered for alias in aliases):
+            crop = key
+            break
+
+    soil = "medium"
+    if any(token in lowered for token in ["dry", "sukhi", "सूखी"]):
+        soil = "dry"
+    elif any(token in lowered for token in ["wet", "geeli", "गीली"]):
+        soil = "wet"
+
+    rain_forecast = any(token in lowered for token in ["rain", "baarish", "बारिश", "monsoon", "मेघ"])
+    return {
+        "crop": crop,
+        "soil_condition": soil,
+        "temperature": 30.0,
+        "humidity": 55.0,
+        "rain_forecast": rain_forecast,
+    }
+
+
+def fetch_rain_forecast_by_location(location: dict[str, Any] | None):
+    if not location:
+        return None
+
+    lat = location.get("lat")
+    lon = location.get("lon")
+    try:
+        lat = float(lat)
+        lon = float(lon)
+    except (TypeError, ValueError):
+        return None
+
+    if abs(lat) < 0.0001 and abs(lon) < 0.0001:
+        return None
+
+    url = (
+        "https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}&longitude={lon}&daily=precipitation_sum&forecast_days=1&timezone=auto"
+    )
+    try:
+        response = requests.get(url, timeout=3)
+        if not response.ok:
+            return None
+        daily = response.json().get("daily", {})
+        precipitation = daily.get("precipitation_sum", [])
+        if not precipitation:
+            return None
+        rainfall_mm = float(precipitation[0])
+        return rainfall_mm >= 2.0
+    except Exception:
+        return None
+
+
 @app.post("/voice-query")
 async def voice_query(req: VoiceQueryReq):
     text = req.text.strip()
@@ -163,8 +269,48 @@ async def voice_query(req: VoiceQueryReq):
         raise HTTPException(status_code=400, detail="`text` must not be empty.")
 
     lang = detect_language_groq(text, req.language, req.groq_api_key)
-    groq_result = ask_groq(text, lang, req.groq_api_key)
+    if is_water_query(text):
+        inferred = infer_water_inputs(text)
+        forecast_from_location = fetch_rain_forecast_by_location(req.location)
+        if forecast_from_location is not None:
+            inferred["rain_forecast"] = forecast_from_location
+        water_advice = get_water_advice(**inferred, location=req.location)
+        enriched_prompt = (
+            f"User query: {text}\n"
+            "You must explain irrigation advice in very simple, farmer-friendly language. "
+            "Use short sentences and be practical.\n"
+            f"Water engine output: {json.dumps(water_advice)}"
+        )
+        groq_result = ask_groq(enriched_prompt, lang, req.groq_api_key, req.location)
+        combined_answer = (
+            f"Water decision: {water_advice['decision']}. "
+            f"{water_advice['reason']} "
+            f"Amount: {water_advice['water_amount']}. "
+            f"Timing: {water_advice['timing']}.\n\n"
+            f"{groq_result['answer']}"
+        )
+        return {"answer": combined_answer, "language": lang, "ok": groq_result["ok"]}
+
+    groq_result = ask_groq(text, lang, req.groq_api_key, req.location)
     return {"answer": groq_result["answer"], "language": lang, "ok": groq_result["ok"]}
+
+
+@app.post("/water-advice")
+async def water_advice(req: WaterAdviceReq):
+    rain_forecast = req.rain_forecast
+    forecast_from_location = fetch_rain_forecast_by_location(req.location)
+    if forecast_from_location is not None:
+        rain_forecast = forecast_from_location
+
+    result = get_water_advice(
+        crop=req.crop,
+        soil_condition=req.soil_condition,
+        temperature=req.temperature,
+        humidity=req.humidity,
+        rain_forecast=rain_forecast,
+        location=req.location,
+    )
+    return result
 
 
 @app.post("/detect-disease")

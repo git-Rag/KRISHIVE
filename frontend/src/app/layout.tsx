@@ -5,7 +5,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const viewport: Viewport = {
-  themeColor: "#0b3d91",
+  themeColor: "#1b5e20",
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
@@ -13,8 +13,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "KRISHIVE Government Services Portal",
-  description: "Official multilingual digital services dashboard for agriculture support.",
+  title: "KRISHIVE | Offline AI Farming Assistant",
+  description: "A multilingual, voice-first, government-grade farming assistant for crop guidance and schemes.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
