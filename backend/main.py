@@ -1,5 +1,7 @@
 import json
 import os
+import base64
+import re
 from typing import Any
 
 import requests
@@ -25,6 +27,8 @@ LANG_MODEL = os.getenv("GROQ_LANG_MODEL", "llama-3.1-8b-instant")
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("HTTP_TIMEOUT_SECONDS", "20"))
 FALLBACK_CHAT_MODEL = os.getenv("GROQ_FALLBACK_CHAT_MODEL", "llama-3.1-8b-instant")
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "").strip()
+GROQ_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+GROQ_VISION_FALLBACK_MODEL = os.getenv("GROQ_VISION_FALLBACK_MODEL", "").strip()
 
 app.add_middleware(
     CORSMiddleware,
@@ -56,6 +60,16 @@ class WeatherByLocationReq(BaseModel):
     lon: float
 
 
+class FertilizerSuggestionReq(BaseModel):
+    crop: str
+    soil_ph: float | None = None
+    nitrogen_level: str | None = None
+    phosphorus_level: str | None = None
+    potassium_level: str | None = None
+    growth_stage: str | None = None
+    visible_symptoms: str | None = None
+
+
 def get_groq_key(override_key: str | None = None):
     if override_key and override_key.strip():
         return override_key.strip()
@@ -77,6 +91,24 @@ def extract_error_message(response: requests.Response):
         return payload.get("error", {}).get("message") or str(payload)
     except Exception:
         return response.text
+
+
+def parse_json_object(text: str):
+    cleaned = (text or "").strip()
+    if not cleaned:
+        raise ValueError("Empty model response")
+
+    # Try direct JSON parse first
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        pass
+
+    # Fallback for markdown/fenced responses
+    match = re.search(r"\{[\s\S]*\}", cleaned)
+    if not match:
+        raise ValueError("No JSON object found in response")
+    return json.loads(match.group(0))
 
 
 def parse_language_from_content(content: str):
@@ -296,6 +328,67 @@ def fetch_openweather_snapshot(lat: float, lon: float):
         return None
 
 
+def detect_disease_with_groq(file_bytes: bytes, content_type: str):
+    groq_key = get_groq_key(None)
+    if not groq_key:
+        raise HTTPException(status_code=503, detail="GROQ_API_KEY is missing in backend environment.")
+
+    encoded = base64.b64encode(file_bytes).decode("utf-8")
+    data_uri = f"data:{content_type};base64,{encoded}"
+
+    base_payload = {
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are an expert plant pathologist and agricultural AI. "
+                    "Analyze this crop/plant image and identify any diseases. "
+                    "Respond in JSON format with fields: disease_name, confidence (0-100), "
+                    "description, treatment_recommendations (array of strings), severity (low/medium/high). "
+                    "If no disease is detected, set disease_name to 'Healthy Plant'."
+                ),
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Analyze this plant image and return only JSON."},
+                    {"type": "image_url", "image_url": {"url": data_uri}},
+                ],
+            },
+        ],
+        "temperature": 0.1,
+        "max_tokens": 700,
+    }
+    models_to_try = [GROQ_VISION_MODEL]
+    if GROQ_VISION_FALLBACK_MODEL and GROQ_VISION_FALLBACK_MODEL != GROQ_VISION_MODEL:
+        models_to_try.append(GROQ_VISION_FALLBACK_MODEL)
+
+    response = None
+    last_error = ""
+    for model in models_to_try:
+        payload = {**base_payload, "model": model}
+        response = post_groq(payload, groq_key)
+        if response.ok:
+            break
+        last_error = extract_error_message(response)
+
+    if not response or not response.ok:
+        raise HTTPException(status_code=502, detail=f"Vision model error: {last_error}")
+
+    content = response.json()["choices"][0]["message"]["content"]
+    parsed = parse_json_object(content)
+
+    return {
+        "disease_name": str(parsed.get("disease_name") or "Healthy Plant"),
+        "confidence": float(parsed.get("confidence") or 0),
+        "description": str(parsed.get("description") or "No additional description available."),
+        "treatment_recommendations": parsed.get("treatment_recommendations")
+        if isinstance(parsed.get("treatment_recommendations"), list)
+        else [],
+        "severity": str(parsed.get("severity") or "low").lower(),
+    }
+
+
 @app.post("/voice-query")
 async def voice_query(req: VoiceQueryReq):
     text = req.text.strip()
@@ -361,6 +454,95 @@ async def detect_disease(file: UploadFile = File(...)):
         "disease": "Leaf Blight (Mock)",
         "confidence": 0.85,
         "treatment": "Apply a copper-based fungicide and ensure proper drainage in the field.",
+    }
+
+
+@app.post("/api/detect-disease")
+async def detect_disease_api(file: UploadFile = File(...)):
+    if not file.content_type or file.content_type not in {"image/jpeg", "image/jpg", "image/png", "image/webp"}:
+        raise HTTPException(status_code=400, detail="Only jpg, png, and webp images are supported.")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file uploaded.")
+
+    result = detect_disease_with_groq(content, file.content_type)
+    return result
+
+
+@app.post("/api/fertilizer-suggestion")
+async def fertilizer_suggestion(req: FertilizerSuggestionReq):
+    groq_key = get_groq_key(None)
+    if not groq_key:
+        raise HTTPException(status_code=503, detail="GROQ_API_KEY is missing in backend environment.")
+
+    system_prompt = (
+        "You are an expert agronomist. Based on the soil data and crop information provided, give precise fertilizer recommendations. "
+        "Respond in JSON with: primary_fertilizer (name, NPK ratio, dosage, application_method), secondary_fertilizer (optional, same fields), organic_alternatives (array of strings), application_schedule (array of {timing, action}), important_notes (array of strings), estimated_yield_improvement (string)."
+    )
+    soil_ph = req.soil_ph if req.soil_ph is not None else 6.5
+    nitrogen = req.nitrogen_level or "Medium"
+    phosphorus = req.phosphorus_level or "Medium"
+    potassium = req.potassium_level or "Medium"
+    growth = req.growth_stage or "Vegetative"
+
+    user_prompt = (
+        f"Crop: {req.crop}\n"
+        f"Soil pH: {soil_ph} (assumed if not provided)\n"
+        f"Nitrogen level: {nitrogen} (assumed if not provided)\n"
+        f"Phosphorus level: {phosphorus} (assumed if not provided)\n"
+        f"Potassium level: {potassium} (assumed if not provided)\n"
+        f"Growth stage: {growth} (assumed if not provided)\n"
+        f"Visible symptoms: {req.visible_symptoms or 'None'}\n\n"
+        "If inputs are assumed, keep recommendations conservative and advise a soil test."
+    )
+
+    payload = {
+        "model": DEFAULT_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.2,
+    }
+
+    response = post_groq(payload, groq_key)
+    if response.status_code == 400 and FALLBACK_CHAT_MODEL and FALLBACK_CHAT_MODEL != DEFAULT_MODEL:
+        payload["model"] = FALLBACK_CHAT_MODEL
+        response = post_groq(payload, groq_key)
+
+    if not response.ok:
+        raise HTTPException(status_code=502, detail=f"Model provider rejected request: {extract_error_message(response)}")
+
+    try:
+        content = response.json()["choices"][0]["message"]["content"]
+        parsed = parse_json_object(content)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Unable to parse model output as JSON: {str(exc)}")
+
+    def normalize_fertilizer(obj: Any):
+        if not isinstance(obj, dict):
+            return {}
+        name = obj.get("name") or obj.get("Name") or ""
+        npk = obj.get("npk_ratio") or obj.get("NPK_ratio") or obj.get("npk") or obj.get("NPK") or ""
+        dosage = obj.get("dosage") or obj.get("Dosage") or ""
+        method = obj.get("application_method") or obj.get("applicationMethod") or obj.get("method") or ""
+        return {
+            "name": str(name),
+            "npk_ratio": str(npk),
+            "dosage": str(dosage),
+            "application_method": str(method),
+        }
+
+    return {
+        "primary_fertilizer": normalize_fertilizer(parsed.get("primary_fertilizer")),
+        "secondary_fertilizer": normalize_fertilizer(parsed.get("secondary_fertilizer"))
+        if parsed.get("secondary_fertilizer") is not None
+        else None,
+        "organic_alternatives": parsed.get("organic_alternatives") if isinstance(parsed.get("organic_alternatives"), list) else [],
+        "application_schedule": parsed.get("application_schedule") if isinstance(parsed.get("application_schedule"), list) else [],
+        "important_notes": parsed.get("important_notes") if isinstance(parsed.get("important_notes"), list) else [],
+        "estimated_yield_improvement": str(parsed.get("estimated_yield_improvement") or ""),
     }
 
 

@@ -14,11 +14,17 @@ const STORAGE_KEY = "krishive_language";
 const LanguageContext = createContext<LanguageContextValue | undefined>(undefined);
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [language, setLanguage] = useState<AppLanguage>(() => {
-    if (typeof window === "undefined") return "en";
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    return saved === "hi" ? "hi" : "en";
-  });
+  const [language, setLanguage] = useState<AppLanguage>("en");
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const saved = window.localStorage.getItem(STORAGE_KEY);
+      if (saved === "hi") {
+        setLanguage("hi");
+      }
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, []);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, language);

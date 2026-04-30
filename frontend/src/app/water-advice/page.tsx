@@ -21,7 +21,7 @@ export default function WaterAdvicePage() {
   const [voiceText, setVoiceText] = useState("");
   const [error, setError] = useState("");
   const [isOnline, setIsOnline] = useState(() => (typeof window === "undefined" ? true : navigator.onLine));
-  const [location, setLocation] = useState<FarmerLocation | null>(() => (typeof window === "undefined" ? null : getCachedLocation()));
+  const [location, setLocation] = useState<FarmerLocation | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [isFetchingWeather, setIsFetchingWeather] = useState(false);
   const [manualDistrict, setManualDistrict] = useState("");
@@ -66,6 +66,13 @@ export default function WaterAdvicePage() {
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
     };
+  }, []);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setLocation(getCachedLocation());
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, []);
 
   const fetchWeatherByLocation = async (target: FarmerLocation) => {

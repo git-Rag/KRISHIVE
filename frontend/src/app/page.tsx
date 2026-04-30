@@ -123,7 +123,7 @@ function HomeContent() {
   const [micError, setMicError] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [isOnline, setIsOnline] = useState(() => (typeof window === "undefined" ? true : navigator.onLine));
-  const [location, setLocation] = useState<FarmerLocation | null>(() => (typeof window === "undefined" ? null : getCachedLocation()));
+  const [location, setLocation] = useState<FarmerLocation | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState("");
   const [manualDistrict, setManualDistrict] = useState("");
@@ -138,6 +138,13 @@ function HomeContent() {
       window.removeEventListener("online", markOnline);
       window.removeEventListener("offline", markOffline);
     };
+  }, []);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setLocation(getCachedLocation());
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, []);
 
   useEffect(() => {
@@ -184,14 +191,14 @@ function HomeContent() {
         title: language === "en" ? "Soil & Fertilizer Advice" : "मिट्टी और उर्वरक सलाह",
         description: language === "en" ? "Balanced nutrient plans for better yield." : "बेहतर उत्पादन के लिए संतुलित पोषण योजना।",
         cta: language === "en" ? "Get Advice" : "सलाह लें",
-        href: "#hero",
+        href: "/fertilizer",
       },
       {
         icon: <Stethoscope size={18} />,
         title: language === "en" ? "Disease Detection" : "रोग पहचान",
         description: language === "en" ? "Identify symptoms and get treatment tips." : "लक्षण पहचानें और उपचार सुझाव पाएं।",
         cta: language === "en" ? "Detect Now" : "अभी पहचानें",
-        href: "#hero",
+        href: "/disease-detection",
       },
       {
         icon: <TrendingUp size={18} />,
@@ -206,6 +213,16 @@ function HomeContent() {
         description: language === "en" ? "Discover subsidy and insurance opportunities." : "सब्सिडी और बीमा लाभ खोजें।",
         cta: language === "en" ? "Explore Schemes" : "योजनाएं देखें",
         href: "#schemes",
+      },
+      {
+        icon: <Leaf size={18} />,
+        title: language === "en" ? "Fertilizer Advice" : "उर्वरक सलाह",
+        description:
+          language === "en"
+            ? "Get nutrient recommendations tailored to your crop and soil."
+            : "आपकी फसल और मिट्टी के अनुसार पोषक तत्व सुझाव।",
+        cta: language === "en" ? "Open Fertilizer Advice" : "उर्वरक सलाह खोलें",
+        href: "/fertilizer",
       },
       {
         icon: <Droplets size={18} />,
