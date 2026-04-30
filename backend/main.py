@@ -24,6 +24,7 @@ DEFAULT_MODEL = os.getenv("GROQ_CHAT_MODEL", "llama-3.3-70b-versatile")
 LANG_MODEL = os.getenv("GROQ_LANG_MODEL", "llama-3.1-8b-instant")
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("HTTP_TIMEOUT_SECONDS", "20"))
 FALLBACK_CHAT_MODEL = os.getenv("GROQ_FALLBACK_CHAT_MODEL", "llama-3.1-8b-instant")
+OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "").strip()
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,6 +49,11 @@ class WaterAdviceReq(BaseModel):
     humidity: float
     rain_forecast: bool
     location: dict[str, Any] | None = None
+
+
+class WeatherByLocationReq(BaseModel):
+    lat: float
+    lon: float
 
 
 def get_groq_key(override_key: str | None = None):
@@ -262,6 +268,34 @@ def fetch_rain_forecast_by_location(location: dict[str, Any] | None):
         return None
 
 
+def fetch_openweather_snapshot(lat: float, lon: float):
+    if not OPENWEATHER_API_KEY:
+        return None
+
+    url = (
+        "https://api.openweathermap.org/data/2.5/weather"
+        f"?lat={lat}&lon={lon}&appid={OPENWEATHER_API_KEY}&units=metric"
+    )
+    try:
+        response = requests.get(url, timeout=5)
+        if not response.ok:
+            return None
+        payload = response.json()
+        main = payload.get("main", {})
+        rain = payload.get("rain", {})
+        weather = payload.get("weather", [])
+        weather_main = str((weather[0] if weather else {}).get("main", "")).lower()
+        rain_mm = float(rain.get("1h", 0) or rain.get("3h", 0) or 0)
+        rain_forecast = rain_mm > 0 or ("rain" in weather_main or "drizzle" in weather_main or "thunderstorm" in weather_main)
+        return {
+            "temperature": main.get("temp"),
+            "humidity": main.get("humidity"),
+            "rain_forecast": rain_forecast,
+        }
+    except Exception:
+        return None
+
+
 @app.post("/voice-query")
 async def voice_query(req: VoiceQueryReq):
     text = req.text.strip()
@@ -311,6 +345,14 @@ async def water_advice(req: WaterAdviceReq):
         location=req.location,
     )
     return result
+
+
+@app.post("/weather-by-location")
+async def weather_by_location(req: WeatherByLocationReq):
+    data = fetch_openweather_snapshot(req.lat, req.lon)
+    if not data:
+        raise HTTPException(status_code=503, detail="Weather service unavailable or OPENWEATHER_API_KEY missing.")
+    return data
 
 
 @app.post("/detect-disease")

@@ -22,6 +22,12 @@ export type WaterAdviceResponse = {
   timing: string;
 };
 
+export type WeatherByLocationResponse = {
+  temperature: number | null;
+  humidity: number | null;
+  rain_forecast: boolean;
+};
+
 type VoiceQueryPayload = {
   text: string;
   language: string;
@@ -58,4 +64,18 @@ export async function postWaterAdvice(payload: WaterAdviceRequest): Promise<Wate
   }
 
   return (await response.json()) as WaterAdviceResponse;
+}
+
+export async function postWeatherByLocation(lat: number, lon: number): Promise<WeatherByLocationResponse> {
+  const response = await fetch(`${API_URL}/weather-by-location`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ lat, lon }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Unable to fetch weather for location.");
+  }
+
+  return (await response.json()) as WeatherByLocationResponse;
 }

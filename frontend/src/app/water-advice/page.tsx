@@ -1,19 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Droplets, LocateFixed, Mic } from "lucide-react";
+import { CloudRain, Droplets, LoaderCircle, LocateFixed, Mic, Thermometer } from "lucide-react";
 import Link from "next/link";
 import { MicButton } from "@/components/home/MicButton";
-import { postWaterAdvice, WaterAdviceResponse } from "@/lib/api";
+import { postWaterAdvice, postWeatherByLocation, WaterAdviceResponse } from "@/lib/api";
 import { detectFarmerLocation, FarmerLocation, getCachedLocation, saveManualLocation } from "@/lib/location";
 import { BrowserSpeechRecognitionEvent, getSpeechRecognitionCtor, SpeechRecognitionCtor } from "@/lib/speech";
 
 export default function WaterAdvicePage() {
   const [crop, setCrop] = useState("wheat");
   const [soilCondition, setSoilCondition] = useState<"dry" | "medium" | "wet">("medium");
-  const [temperature, setTemperature] = useState(30);
-  const [humidity, setHumidity] = useState(55);
+  const [temperature, setTemperature] = useState<number | null>(null);
+  const [humidity, setHumidity] = useState<number | null>(null);
   const [rainForecast, setRainForecast] = useState(false);
+  const [weatherUpdatedAt, setWeatherUpdatedAt] = useState<string>("");
   const [result, setResult] = useState<WaterAdviceResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -22,6 +23,7 @@ export default function WaterAdvicePage() {
   const [isOnline, setIsOnline] = useState(() => (typeof window === "undefined" ? true : navigator.onLine));
   const [location, setLocation] = useState<FarmerLocation | null>(() => (typeof window === "undefined" ? null : getCachedLocation()));
   const [isLocating, setIsLocating] = useState(false);
+  const [isFetchingWeather, setIsFetchingWeather] = useState(false);
   const [manualDistrict, setManualDistrict] = useState("");
   const recognitionRef = useRef<InstanceType<SpeechRecognitionCtor> | null>(null);
 
@@ -66,15 +68,35 @@ export default function WaterAdvicePage() {
     };
   }, []);
 
+  const fetchWeatherByLocation = async (target: FarmerLocation) => {
+    if (!target.lat || !target.lon) return;
+    setIsFetchingWeather(true);
+    try {
+      const data = await postWeatherByLocation(target.lat, target.lon);
+      setTemperature(typeof data.temperature === "number" ? Math.round(data.temperature) : null);
+      setHumidity(typeof data.humidity === "number" ? Math.round(data.humidity) : null);
+      setRainForecast(Boolean(data.rain_forecast));
+      setWeatherUpdatedAt(new Date().toLocaleTimeString());
+    } catch {
+      setError("Unable to fetch weather from location.");
+    } finally {
+      setIsFetchingWeather(false);
+    }
+  };
+
   const onAskAdvice = async () => {
     setError("");
+    if (temperature == null || humidity == null) {
+      setError("Please use location first to auto-fill weather.");
+      return;
+    }
     setLoading(true);
     try {
       const advice = await postWaterAdvice({
         crop,
         soil_condition: soilCondition,
-        temperature,
-        humidity,
+        temperature: Number(temperature),
+        humidity: Number(humidity),
         rain_forecast: rainForecast,
         location: location || undefined,
       });
@@ -104,6 +126,7 @@ export default function WaterAdvicePage() {
     try {
       const detected = await detectFarmerLocation();
       setLocation(detected);
+      await fetchWeatherByLocation(detected);
     } catch {
       setError("Location unavailable. Enter district manually.");
     } finally {
@@ -121,23 +144,45 @@ export default function WaterAdvicePage() {
             <h1 className="text-2xl font-semibold">Water Advice</h1>
           </div>
           <p className="text-sm text-[#4d594d]">Get quick irrigation guidance for your crop.</p>
-          <div className="mt-4 rounded-xl border border-[#ddd6c4] bg-[#fffdf8] p-3">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <section className="mt-6 rounded-xl border border-[#d6e3d6] bg-[#eef6ee] p-4">
+            <h2 className="text-lg font-semibold text-[#1b5e20]">Ask Your Farming Question</h2>
+            <div className="mt-3 flex flex-col gap-3">
+              <div className="mx-auto">
+                <MicButton isRecording={isRecording} onClick={() => void onMicClick()} label="Voice input for crop and soil" prominent />
+              </div>
+              <p className="text-center text-sm text-[#4d594d]">{isRecording ? "Listening..." : "Tap mic and ask in Hindi or English."}</p>
+              <div className="relative">
+                <Mic size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#1b5e20]" />
+                <input
+                  value={voiceText}
+                  onChange={(event) => setVoiceText(event.target.value)}
+                  placeholder="Transcribed question appears here"
+                  className="min-h-[56px] w-full rounded-lg border border-[#cfd8cf] bg-white pl-9 pr-3 text-sm"
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="mt-6 rounded-xl border border-[#ddd6c4] bg-[#fffdf8] p-4">
+            <h2 className="text-lg font-semibold text-[#1f2a1f]">Location + Auto Weather</h2>
+            <div className="mt-3">
               <button
                 type="button"
                 onClick={() => void onUseLocation()}
-                disabled={isLocating}
-                className="inline-flex min-h-[52px] items-center justify-center gap-2 rounded-lg border border-[#1b5e20] px-4 text-sm font-medium text-[#1b5e20]"
+                disabled={isLocating || isFetchingWeather}
+                className="inline-flex min-h-[56px] w-full items-center justify-center gap-2 rounded-lg border border-[#1b5e20] px-4 text-sm font-medium text-[#1b5e20]"
               >
-                <LocateFixed size={16} />
-                {isLocating ? "Detecting..." : "Use My Location"}
+                {(isLocating || isFetchingWeather) ? <LoaderCircle size={16} className="animate-spin" /> : <LocateFixed size={16} />}
+                {(isLocating || isFetchingWeather) ? "Fetching location and weather..." : "Use My Location"}
               </button>
-              <p className="text-sm text-[#3f4c3f]">
+              <p className="mt-2 text-sm text-[#3f4c3f]">
                 {location ? `Location: ${location.district}, ${location.state}` : "Location not set"}
               </p>
+              {weatherUpdatedAt ? <p className="text-xs text-[#667366]">Last updated: {weatherUpdatedAt}</p> : null}
             </div>
+
             {!isOnline && !location ? (
-              <div className="mt-2 flex gap-2">
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                 <input
                   value={manualDistrict}
                   onChange={(event) => setManualDistrict(event.target.value)}
@@ -153,92 +198,78 @@ export default function WaterAdvicePage() {
                 </button>
               </div>
             ) : null}
-          </div>
 
-          <div className="mt-5 grid gap-3">
-            <label className="text-sm font-medium">Crop</label>
-            <select
-              value={crop}
-              onChange={(event) => setCrop(event.target.value)}
-              className="min-h-[56px] rounded-lg border border-[#d8d2bf] px-3"
-            >
-              <option value="wheat">Wheat</option>
-              <option value="rice">Rice</option>
-              <option value="maize">Maize</option>
-              <option value="cotton">Cotton</option>
-              <option value="sugarcane">Sugarcane</option>
-            </select>
-
-            <label className="text-sm font-medium">Soil Condition</label>
-            <div className="grid grid-cols-3 gap-2">
-              {(["dry", "medium", "wet"] as const).map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => setSoilCondition(item)}
-                  className={`min-h-[60px] rounded-lg border text-sm font-medium ${
-                    soilCondition === item ? "border-[#1b5e20] bg-[#1b5e20] text-white" : "border-[#d8d2bf] bg-white text-[#1f2a1f]"
-                  }`}
-                >
-                  {item === "dry" ? "Dry" : item === "medium" ? "Medium" : "Wet"}
-                </button>
-              ))}
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <article className="rounded-lg border border-[#ddd6c4] bg-white p-3">
+                <p className="text-xs text-[#6a786a]">🌡 Temp</p>
+                <p className="mt-1 flex items-center gap-1 text-lg font-semibold text-[#1f2a1f]"><Thermometer size={16} /> {temperature ?? "--"}{temperature != null ? " C" : ""}</p>
+              </article>
+              <article className="rounded-lg border border-[#ddd6c4] bg-white p-3">
+                <p className="text-xs text-[#6a786a]">💧 Humidity</p>
+                <p className="mt-1 flex items-center gap-1 text-lg font-semibold text-[#1f2a1f]"><Droplets size={16} /> {humidity ?? "--"}{humidity != null ? "%" : ""}</p>
+              </article>
+              <article className="rounded-lg border border-[#ddd6c4] bg-white p-3">
+                <p className="text-xs text-[#6a786a]">🌧 Rain</p>
+                <p className="mt-1 flex items-center gap-1 text-lg font-semibold text-[#1f2a1f]"><CloudRain size={16} /> {rainForecast ? "Likely" : "Not likely"}</p>
+              </article>
             </div>
+          </section>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-sm font-medium">Temp (C)</label>
-                <input
-                  type="number"
-                  value={temperature}
-                  onChange={(event) => setTemperature(Number(event.target.value))}
-                  className="mt-1 min-h-[56px] w-full rounded-lg border border-[#d8d2bf] px-3"
-                />
+          <section className="mt-6 rounded-xl border border-[#ddd6c4] bg-white p-4">
+            <h2 className="text-lg font-semibold text-[#1f2a1f]">Crop &amp; Soil Details</h2>
+            <div className="mt-3 grid gap-3">
+              <label className="text-sm font-medium">Crop</label>
+              <select
+                value={crop}
+                onChange={(event) => setCrop(event.target.value)}
+                className="min-h-[56px] rounded-lg border border-[#d8d2bf] px-3"
+              >
+                <option value="wheat">Wheat</option>
+                <option value="rice">Rice</option>
+                <option value="maize">Maize</option>
+                <option value="cotton">Cotton</option>
+                <option value="sugarcane">Sugarcane</option>
+              </select>
+
+              <label className="text-sm font-medium">Soil Condition</label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {(["dry", "medium", "wet"] as const).map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => setSoilCondition(item)}
+                    className={`min-h-[60px] rounded-lg border text-sm font-medium ${
+                      soilCondition === item ? "border-[#1b5e20] bg-[#1b5e20] text-white" : "border-[#d8d2bf] bg-white text-[#1f2a1f]"
+                    }`}
+                  >
+                    {item === "dry" ? "Dry" : item === "medium" ? "Medium" : "Wet"}
+                  </button>
+                ))}
               </div>
-              <div>
-                <label className="text-sm font-medium">Humidity (%)</label>
-                <input
-                  type="number"
-                  value={humidity}
-                  onChange={(event) => setHumidity(Number(event.target.value))}
-                  className="mt-1 min-h-[56px] w-full rounded-lg border border-[#d8d2bf] px-3"
-                />
-              </div>
+
+              <button
+                type="button"
+                onClick={() => void onAskAdvice()}
+                disabled={loading}
+                className="mt-2 min-h-[60px] w-full rounded-lg bg-[#1b5e20] px-4 text-base font-semibold text-white shadow-sm disabled:opacity-60"
+              >
+                {loading ? "Getting Advice..." : "Get Water Advice"}
+              </button>
+              {error ? <p className="text-sm text-[#8f2f14]">{error}</p> : null}
             </div>
-
-            <button
-              type="button"
-              onClick={() => setRainForecast((prev) => !prev)}
-              className={`min-h-[60px] rounded-lg border px-4 text-left text-sm font-medium ${
-                rainForecast ? "border-[#1b5e20] bg-[#e8f3e8] text-[#1b5e20]" : "border-[#d8d2bf] bg-white"
-              }`}
-            >
-              Rain forecast: {rainForecast ? "Yes" : "No"}
-            </button>
-
-            <div className="mt-2 flex items-center gap-3">
-              <MicButton isRecording={isRecording} onClick={() => void onMicClick()} label="Voice input for crop and soil" />
-              <p className="text-sm text-[#4d594d]">{isRecording ? "Listening..." : "Use voice: गेहूं, सूखी मिट्टी, etc."}</p>
-              <Mic size={16} className="text-[#1b5e20]" />
-            </div>
-            {voiceText ? <p className="rounded-lg bg-[#f7f3e8] p-2 text-sm">{voiceText}</p> : null}
-
-            <button
-              type="button"
-              onClick={() => void onAskAdvice()}
-              disabled={loading}
-              className="mt-2 min-h-[60px] rounded-lg bg-[#1b5e20] px-4 text-base font-semibold text-white shadow-sm disabled:opacity-60"
-            >
-              {loading ? "Getting Advice..." : "Get Water Advice"}
-            </button>
-            {error ? <p className="text-sm text-[#8f2f14]">{error}</p> : null}
-          </div>
+          </section>
         </div>
 
         {result ? (
           <article className="mt-4 rounded-2xl border border-[#d8d2bf] bg-white p-5 shadow-sm">
             <p className="text-sm text-[#6a786a]">Decision</p>
-            <p className="text-2xl font-bold text-[#1b5e20]">{result.decision}</p>
+            <p
+              className={`text-2xl font-bold ${
+                result.decision.toLowerCase().includes("irrigate") ? "text-[#1b5e20]" : "text-[#b45309]"
+              }`}
+            >
+              {result.decision}
+            </p>
             <p className="mt-3 text-sm"><span className="font-semibold">Reason:</span> {result.reason}</p>
             <p className="mt-1 text-sm"><span className="font-semibold">Water Amount:</span> {result.water_amount}</p>
             <p className="mt-1 text-sm"><span className="font-semibold">Timing:</span> {result.timing}</p>
