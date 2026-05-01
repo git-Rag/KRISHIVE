@@ -115,3 +115,9 @@ Frontend env:
 
 ## License
 This project is for educational and hackathon purposes.
+
+## Project Info
+
+This project was developed and presented at the Oriental Techhack 2.0 Hackathon.
+
+---
